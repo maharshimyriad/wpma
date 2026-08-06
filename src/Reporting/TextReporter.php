@@ -59,6 +59,16 @@ class TextReporter implements ReporterInterface
             $out[] = '';
             // Still render Plugin Integrity even when no threats found
             $out = array_merge($out, $this->renderPluginIntegrity($report));
+
+            // IOC notice — even on a clean scan, flag collected indicators
+            if (!empty($report->allIocs)) {
+                $out[] = $this->bold('NOTE');
+                $out[] = str_repeat('─', 50);
+                $out[] = '  Additional suspicious indicators were found during analysis.';
+                $out[] = '  Review the findings above for details and context.';
+                $out[] = '';
+            }
+
             return implode("\n", $out);
         }
 
@@ -93,28 +103,6 @@ class TextReporter implements ReporterInterface
             }
         }
 
-        // IOCs
-        // IOCs — only show suspicious ones (not trusted services, not private IPs)
-        $suspiciousIocs = array_filter(
-            $report->allIocs,
-            fn($ioc) => !$ioc->isKnownWpService
-                && !$ioc->isPrivateIp
-                && !$this->isTrustedIocDomain($ioc)
-        );
-        if (!empty($suspiciousIocs)) {
-            $out[] = $this->bold('SUSPICIOUS IOCs');
-            $out[] = str_repeat('─', 50);
-            $shown = 0;
-            foreach ($suspiciousIocs as $ioc) {
-                if ($shown++ >= 20) {
-                    $out[] = sprintf('  ... and %d more', count($suspiciousIocs) - 20);
-                    break;
-                }
-                $out[] = sprintf('  [%s] %s (line %d)', strtoupper($ioc->type->value), $ioc->value, $ioc->line);
-            }
-            $out[] = '';
-        }
-
         // Plugin Integrity
         $out = array_merge($out, $this->renderPluginIntegrity($report));
 
@@ -128,6 +116,17 @@ class TextReporter implements ReporterInterface
             if (count($report->warnings) > 10) {
                 $out[] = sprintf('  ... and %d more', count($report->warnings) - 10);
             }
+            $out[] = '';
+        }
+
+        // IOC notice — emitted last, only when IOCs were collected.
+        // Full IOC data is available in JSON output; text output intentionally
+        // omits raw values to reduce noise for human readers.
+        if (!empty($report->allIocs)) {
+            $out[] = $this->bold('NOTE');
+            $out[] = str_repeat('─', 50);
+            $out[] = '  Additional suspicious indicators were found during analysis.';
+            $out[] = '  Review the findings above for details and context.';
             $out[] = '';
         }
 
@@ -173,35 +172,6 @@ class TextReporter implements ReporterInterface
         $out[] = '';
 
         return $out;
-    }
-
-    private function isTrustedIocDomain(\Wpma\Models\IOC $ioc): bool
-    {
-        // Filter out domains that are standards/documentation/developer resources
-        if ($ioc->type !== \Wpma\Models\IOCType::URL && $ioc->type !== \Wpma\Models\IOCType::DOMAIN) {
-            return false;
-        }
-
-        $value = $ioc->value;
-        $host  = parse_url($value, PHP_URL_HOST) ?: $value;
-        $host  = strtolower(trim($host, '.'));
-
-        $trustedSuffixes = [
-            'w3.org', 'ietf.org', 'iana.org', 'php.net', 'schema.org',
-            'mozilla.org', 'example.com', 'example.org', 'json-schema.org',
-            'openssl.org', 'composer.org', 'packagist.org', 'getcomposer.org',
-            'github.com', 'gitlab.com', 'bitbucket.org', 'raw.githubusercontent.com',
-            'wordpress.org', 'wordpress.com', 'wpbeaverbuilder.com',
-            'wordfence.com', 'woocommerce.com', 'yoast.com', 'elementor.com',
-        ];
-
-        foreach ($trustedSuffixes as $suffix) {
-            if ($host === $suffix || str_ends_with($host, '.' . $suffix)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private function renderPluginIntegrity(\Wpma\Models\ScanReport $report): array
