@@ -88,6 +88,12 @@ class UploadsAnomalyScanner
     ];
 
     /**
+     * Threshold above which clean UPLD-001 findings are aggregated into one
+     * summary finding instead of being emitted individually.
+     */
+    public const UPLD001_AGGREGATE_THRESHOLD = 4;
+
+    /**
      * Scan the uploads directory for anomalous files.
      *
      * Runs its own recursive enumeration — independent of FileDiscovery and the
@@ -158,6 +164,159 @@ class UploadsAnomalyScanner
         }
 
         return $results;
+    }
+
+    /**
+     * Aggregate clean UPLD-001 findings when there are 4 or more of them.
+     *
+     * A "clean" UPLD-001 file is one whose entry in $results contains ONLY an
+     * UPLD-001 finding and no co-located behavioral findings from other rules.
+     * Files with any non-UPLD-001 finding are always preserved individually.
+     *
+     * When fewer than UPLD001_AGGREGATE_THRESHOLD clean files are found, the
+     * original per-file entries are returned unchanged.
+     *
+     * When the threshold is met or exceeded, the clean per-file entries are
+     * removed and replaced with a single aggregate Finding attached to a
+     * virtual path representing the uploads directory itself.
+     *
+     * All affected absolute paths are stored in the aggregate finding's tags so
+     * that downstream consumers (e.g. JSON reporter) can access the full list
+     * even though text output shows only representative samples.
+     *
+     * NOTE: In the full scan pipeline, this is called from ScanOrchestrator
+     * (after behavioral findings have been merged). Tests may also call it
+     * directly on the scanner for unit-level coverage.
+     *
+     * @param  array<string, Finding[]> $results    Raw scan results (absPath → findings)
+     * @param  string                   $uploadsDir Uploads directory (already normalised)
+     * @return array<string, Finding[]>
+     */
+    public function aggregateCleanUpld001Findings(array $results, string $uploadsDir): array
+    {
+        $uploadsDir = rtrim(str_replace('\\', '/', $uploadsDir), '/');
+
+        // Partition: clean UPLD-001 only vs. everything else (has behavioral finding)
+        $cleanPaths    = []; // abs paths that have ONLY UPLD-001 (no other ruleId)
+        $retainedPaths = []; // abs paths that have at least one non-UPLD-001 finding
+
+        foreach ($results as $absPath => $findings) {
+            $hasOnlyUpld001 = true;
+            foreach ($findings as $finding) {
+                if ($finding->ruleId !== 'UPLD-001') {
+                    $hasOnlyUpld001 = false;
+                    break;
+                }
+            }
+
+            if ($hasOnlyUpld001) {
+                $cleanPaths[] = $absPath;
+            } else {
+                $retainedPaths[] = $absPath;
+            }
+        }
+
+        // Below threshold: return as-is (no aggregation needed)
+        if (count($cleanPaths) < self::UPLD001_AGGREGATE_THRESHOLD) {
+            return $results;
+        }
+
+        // Build aggregated result: start with entries that must be preserved individually
+        $aggregated = [];
+        foreach ($retainedPaths as $absPath) {
+            $aggregated[$absPath] = $results[$absPath];
+        }
+
+        // Sort paths for deterministic representative sample selection
+        sort($cleanPaths);
+
+        // Compute relative paths for display (strip uploads dir prefix)
+        $relPaths = array_map(
+            static fn(string $p): string => ltrim(substr($p, strlen($uploadsDir)), '/'),
+            $cleanPaths,
+        );
+
+        // Build the aggregate finding and attach it to the uploads dir virtual path
+        $aggregateKey = $uploadsDir . '/__upld001_aggregate__';
+        $aggregated[$aggregateKey] = [
+            $this->makeAggregateUpld001Finding(
+                $aggregateKey,
+                $uploadsDir,
+                count($cleanPaths),
+                $cleanPaths,
+                $relPaths,
+            ),
+        ];
+
+        return $aggregated;
+    }
+
+    /**
+     * Build the single aggregate UPLD-001 Finding that replaces N individual findings.
+     *
+     * Called from UploadsAnomalyScanner itself and also from ScanOrchestrator
+     * (which aggregates after behavioral findings have been merged).
+     *
+     * @param  string   $virtualPath   Key path used as filePath (the uploads dir + suffix)
+     * @param  string   $uploadsDir    Uploads directory (normalised, no trailing slash)
+     * @param  int      $totalCount    Total number of clean UPLD-001 files found
+     * @param  string[] $allAbsPaths   All absolute paths affected (stored in tags for JSON)
+     * @param  string[] $allRelPaths   All relative paths (first 3 shown in description)
+     */
+    public function makeAggregateUpld001Finding(
+        string $virtualPath,
+        string $uploadsDir,
+        int    $totalCount,
+        array  $allAbsPaths,
+        array  $allRelPaths,
+    ): Finding {
+        // Show at most 3 representative paths; add "... and N more" if needed
+        $sample  = array_slice($allRelPaths, 0, 3);
+        $rest    = $totalCount - count($sample);
+        $pathList = implode("\n  - ", $sample);
+        if ($rest > 0) {
+            $pathList .= sprintf("\n  ... and %d more", $rest);
+        }
+
+        $description = sprintf(
+            '%d PHP/server-executable file%s found in the WordPress uploads directory. '
+            . 'WPMA did not detect suspicious behavior in %s during behavioral analysis. '
+            . 'Some plugins may legitimately create PHP placeholder or protection files in uploads. '
+            . 'Executable files in uploads are unusual and should be reviewed.'
+            . "\nRepresentative paths:\n  - %s",
+            $totalCount,
+            $totalCount === 1 ? '' : 's',
+            $totalCount === 1 ? 'this file' : 'these files',
+            $pathList,
+        );
+
+        // Store all absolute paths in tags so JSON consumers can access the full list
+        $allPathTags = array_map(static fn(string $p): string => 'affected-path:' . $p, $allAbsPaths);
+
+        return Finding::create([
+            'ruleId'      => 'UPLD-001',
+            'title'       => sprintf('Multiple executable files found in uploads directory (%d files)', $totalCount),
+            'filePath'    => $virtualPath,
+            'line'        => 0,
+            'severity'    => Severity::MEDIUM,
+            'confidence'  => Confidence::HIGH,
+            'category'    => DetectionCategory::FILE_MANIPULATION,
+            'description' => $description,
+            'explanation' => 'PHP and other server-executable files should not exist in the WordPress uploads '
+                . 'directory. While some plugins legitimately create index.php or similar placeholder files, '
+                . 'the presence of multiple executable files warrants manual review to confirm each was '
+                . 'intentionally created. Executable files in uploads are a common indicator of compromise.',
+            'remediation' => 'Review each executable file in the uploads directory. Confirm whether each was '
+                . 'intentionally placed there by a plugin. Remove any file that cannot be accounted for and '
+                . 'investigate how it was created.',
+            'evidence'    => [],
+            'iocs'        => [],
+            'mitreTechniques' => [],
+            'tags'        => array_merge(
+                ['uploads', 'php-in-uploads', 'wp-uploads-anomaly', 'upld001-aggregate'],
+                $allPathTags,
+            ),
+        ]);
     }
 
     // ── Content-type detection ─────────────────────────────────────────────────

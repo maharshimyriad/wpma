@@ -215,7 +215,11 @@ class ScanOrchestrator
             $rawResults = [];
             $this->injectExtraFindings($rawResults, $integrityFindingsByFile);
             if ($this->shouldRunUploadsAnomalyScan()) {
-                $this->injectExtraFindings($rawResults, $this->scanUploadsAnomalies());
+                $uploadsFindingsByFile = $this->scanUploadsAnomalies();
+                $this->injectExtraFindings($rawResults, $uploadsFindingsByFile);
+                if ($uploadsFindingsByFile !== []) {
+                    $this->aggregateCleanUpld001InRawResults($rawResults);
+                }
             }
             $resultsWithFindings = array_filter($rawResults, fn($r) => !empty($r['findings']));
             $fileResults         = $this->riskEngine->scoreAndSortFileResults(array_values($resultsWithFindings));
@@ -330,6 +334,15 @@ class ScanOrchestrator
         // their own rawResult entries here so they appear in the final report.
         $this->injectExtraFindings($rawResults, $integrityFindingsByFile);
         $this->injectExtraFindings($rawResults, $uploadsFindingsByFile);
+
+        // ── Aggregate clean UPLD-001 findings ─────────────────────────────────
+        // After all findings (behavioral + uploads anomaly) have been merged into
+        // $rawResults, collapse clean UPLD-001-only files (≥4) into one summary.
+        // Must run after injectExtraFindings so behavioral co-findings on the
+        // same file are visible and excluded from the clean set.
+        if ($uploadsFindingsByFile !== []) {
+            $this->aggregateCleanUpld001InRawResults($rawResults);
+        }
 
         // ── Score and build report ────────────────────────────────────────────
         // Only pass files with findings to the risk engine to keep report clean
@@ -887,6 +900,119 @@ class ScanOrchestrator
 
         $scanner = new UploadsAnomalyScanner();
         return $scanner->scan($uploadsDir);
+    }
+
+    /**
+     * Aggregate clean UPLD-001 findings in $rawResults after all findings have
+     * been merged (behavioral + uploads anomaly).
+     *
+     * Must be called AFTER both injectExtraFindings() calls so that co-located
+     * behavioral findings (e.g. BACK-001 on a malicious PHP in uploads) are
+     * already present in the same rawResult entry and therefore prevent that
+     * file from being included in the clean aggregate.
+     *
+     * @param array<int, array> $rawResults  Passed by reference
+     */
+    private function aggregateCleanUpld001InRawResults(array &$rawResults): void
+    {
+        // Determine the uploads directory from the scan configuration
+        $scanRoot   = rtrim(str_replace('\\', '/', $this->config->target), '/');
+        $uploadsDir = null;
+
+        $candidate = $scanRoot . '/wp-content/uploads';
+        if (is_dir($candidate)) {
+            $uploadsDir = $candidate;
+        }
+
+        if ($uploadsDir === null && preg_match('#wp-content/uploads#i', $scanRoot) && is_dir($scanRoot)) {
+            $uploadsDir = $scanRoot;
+        }
+
+        if ($uploadsDir === null) {
+            return;
+        }
+
+        $uploadsDir = rtrim(str_replace('\\', '/', $uploadsDir), '/');
+
+        // ── Identify clean UPLD-001 entries ──────────────────────────────────
+        // A "clean" entry is one where:
+        //   • every finding has ruleId === 'UPLD-001'
+        //   • the file lives inside the uploads directory
+        $cleanIndexes    = []; // indexes into $rawResults of clean-only entries
+        $cleanAbsPaths   = []; // absolute paths of clean entries
+
+        foreach ($rawResults as $idx => $entry) {
+            $absPath = str_replace('\\', '/', $entry['filePath']);
+
+            // Only consider files inside uploads
+            if (!str_starts_with($absPath, $uploadsDir . '/')) {
+                continue;
+            }
+
+            // Must have at least one finding and all must be UPLD-001
+            if (empty($entry['findings'])) {
+                continue;
+            }
+
+            $hasOnlyUpld001 = true;
+            foreach ($entry['findings'] as $finding) {
+                if ($finding->ruleId !== 'UPLD-001') {
+                    $hasOnlyUpld001 = false;
+                    break;
+                }
+            }
+
+            if ($hasOnlyUpld001) {
+                $cleanIndexes[]  = $idx;
+                $cleanAbsPaths[] = $absPath;
+            }
+        }
+
+        // Below threshold: nothing to do
+        if (count($cleanAbsPaths) < UploadsAnomalyScanner::UPLD001_AGGREGATE_THRESHOLD) {
+            return;
+        }
+
+        // Sort for deterministic representative path selection
+        sort($cleanAbsPaths);
+        sort($cleanIndexes);
+
+        // Remove the individual clean entries from rawResults
+        foreach ($cleanIndexes as $idx) {
+            unset($rawResults[$idx]);
+        }
+
+        // Compute relative paths for display
+        $relPaths = array_map(
+            static fn(string $p): string => ltrim(substr($p, strlen($uploadsDir)), '/'),
+            $cleanAbsPaths,
+        );
+
+        // Build the aggregate and inject it
+        $scanner      = new UploadsAnomalyScanner();
+        $virtualPath  = $uploadsDir . '/__upld001_aggregate__';
+
+        $aggregateFindings = [
+            $scanner->makeAggregateUpld001Finding(
+                $virtualPath,
+                $uploadsDir,
+                count($cleanAbsPaths),
+                $cleanAbsPaths,
+                $relPaths,
+            ),
+        ];
+
+        $rawResults[] = [
+            'filePath'     => $virtualPath,
+            'relativePath' => $this->relativePath($virtualPath),
+            'findings'     => $aggregateFindings,
+            'iocs'         => [],
+            'wpContext'    => null,
+            'scanTimeMs'   => 0.0,
+        ];
+
+        // Re-index to avoid gaps
+        $rawResults = array_values($rawResults);
     }
 
     /**

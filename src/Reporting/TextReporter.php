@@ -69,6 +69,14 @@ class TextReporter implements ReporterInterface
         foreach ($report->fileResults as $fr) {
             if (empty($fr->findings)) continue;
 
+            // ── Aggregate UPLD-001 block ──────────────────────────────────────
+            // When all findings in this FileResult are the upld001-aggregate
+            // synthetic finding, render a summary block instead of a file block.
+            if ($this->isUpld001AggregateResult($fr)) {
+                $out = array_merge($out, $this->renderUpld001Aggregate($fr));
+                continue;
+            }
+
             $out[] = '';
             $out[] = sprintf('  📄 %s  [Risk: %.1f]', $fr->relativePath, $fr->riskScore);
 
@@ -124,6 +132,47 @@ class TextReporter implements ReporterInterface
         }
 
         return implode("\n", $out);
+    }
+
+    /**
+     * Returns true if a FileResult contains only the aggregate UPLD-001 synthetic finding.
+     */
+    private function isUpld001AggregateResult(\Wpma\Models\FileResult $fr): bool
+    {
+        if (count($fr->findings) !== 1) {
+            return false;
+        }
+        $f = $fr->findings[0];
+        return $f->ruleId === 'UPLD-001' && in_array('upld001-aggregate', $f->tags, true);
+    }
+
+    /**
+     * Render the aggregate UPLD-001 summary block.
+     *
+     * @return string[]
+     */
+    private function renderUpld001Aggregate(\Wpma\Models\FileResult $fr): array
+    {
+        $finding = $fr->findings[0];
+        $out     = [];
+
+        $sev    = strtoupper($finding->severity->value);
+        $sevTag = $this->severityColor($finding->severity->value, sprintf('[%s]', $sev));
+
+        $out[] = '';
+        $out[] = sprintf(
+            '  📁 wp-content/uploads/  (aggregate)  [Risk: %.1f]',
+            $fr->riskScore,
+        );
+        $out[] = sprintf('     %s %s', $sevTag, $finding->title);
+        $out[] = sprintf('          Rule    : %s', $finding->ruleId);
+        $out[] = sprintf('          Details : %s', $finding->description);
+        if ($finding->remediation !== '') {
+            $out[] = sprintf('          Fix     : %s', $finding->remediation);
+        }
+        $out[] = '';
+
+        return $out;
     }
 
     private function isTrustedIocDomain(\Wpma\Models\IOC $ioc): bool
