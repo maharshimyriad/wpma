@@ -1,0 +1,13 @@
+vendor/
+.phpunit.result.cache
+
+# Archives / packaged output
+*.zip
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
