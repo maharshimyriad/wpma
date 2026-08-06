@@ -135,25 +135,58 @@ cd wpma
 composer install
 ```
 
+Add a shell alias in your `~/.bashrc` so you can run WPMA more easily:
+
+```bash
+alias wpma='/path/to/wpma.sh'
+```
+
+Reload your shell configuration:
+
+```bash
+source ~/.bashrc
+```
+
 Then verify the environment:
 
 ```bash
-bash wpma.sh check
+wpma check
+```
+
+If the alias is not available, use the script path directly:
+
+```bash
+bash wpma/wpma.sh check
 ```
 
 And confirm the installed version:
 
 ```bash
-bash wpma.sh version
+wpma version
+```
+
+Fallback without the alias:
+
+```bash
+bash wpma/wpma.sh version
 ```
 
 ## Usage
 
 ```bash
-bash wpma.sh help
-bash wpma.sh check
-bash wpma.sh scan [path] [options]
-bash wpma.sh version
+wpma help
+wpma check
+wpma scan [path] [options]
+wpma version
+```
+
+If the alias is not available, use:
+
+```bash
+bash wpma/wpma.sh help
+bash wpma/wpma.sh check
+bash wpma/wpma.sh scan [path] [options]
+bash wpma/wpma.sh version
 ```
 
 ### CLI options
@@ -200,103 +233,103 @@ informational | low | medium | high | critical
 #### Smart scan a WordPress site
 
 ```bash
-bash wpma.sh scan /var/www/html
+wpma scan /var/www/html
 ```
 
 #### Force full WordPress site target detection
 
 ```bash
-bash wpma.sh scan /var/www/html --full-site
+wpma scan /var/www/html --full-site
 ```
 
 #### Scan WordPress core
 
 ```bash
-bash wpma.sh scan /var/www/html --core
+wpma scan /var/www/html --core
 ```
 
 #### Scan all plugins in a site
 
 ```bash
-bash wpma.sh scan /var/www/html --plugins
+wpma scan /var/www/html --plugins
 ```
 
 #### Scan all themes in a site
 
 ```bash
-bash wpma.sh scan /var/www/html --themes
+wpma scan /var/www/html --themes
 ```
 
 #### Scan a single plugin directory
 
 ```bash
-bash wpma.sh scan /var/www/html/wp-content/plugins/example-plugin
+wpma scan /var/www/html/wp-content/plugins/example-plugin
 ```
 
 #### Scan a single file
 
 ```bash
-bash wpma.sh scan /var/www/html/wp-content/plugins/example-plugin/example.php --file
+wpma scan /var/www/html/wp-content/plugins/example-plugin/example.php --file
 ```
 
 #### Integrity-only scan
 
 ```bash
-bash wpma.sh scan /var/www/html --quick
+wpma scan /var/www/html --quick
 ```
 
 #### Full deep scan
 
 ```bash
-bash wpma.sh scan /var/www/html --full
+wpma scan /var/www/html --full
 ```
 
 #### JSON output
 
 ```bash
-bash wpma.sh scan /var/www/html --output json
+wpma scan /var/www/html --output json
 ```
 
 #### JSON output to a file
 
 ```bash
-bash wpma.sh scan /var/www/html --json --output-file report.json
+wpma scan /var/www/html --json --output-file report.json
 ```
 
 #### Severity filtering
 
 ```bash
-bash wpma.sh scan /var/www/html --severity high
+wpma scan /var/www/html --severity high
 ```
 
 #### Progress output
 
 ```bash
-bash wpma.sh scan /var/www/html --progress
+wpma scan /var/www/html --progress
 ```
 
 #### Quiet mode
 
 ```bash
-bash wpma.sh scan /var/www/html --quiet
+wpma scan /var/www/html --quiet
 ```
 
 #### Disable ANSI color in text output
 
 ```bash
-bash wpma.sh scan /var/www/html --no-color
+wpma scan /var/www/html --no-color
 ```
 
 #### Skip core integrity verification
 
 ```bash
-bash wpma.sh scan /var/www/html --no-core
+wpma scan /var/www/html --no-core
 ```
 
 #### Skip uploads anomaly scanning
 
 ```bash
-bash wpma.sh scan /var/www/html --no-uploads
+wpma scan /var/www/html --no-uploads
 ```
 
 ## Smart mode
@@ -528,7 +561,7 @@ php -l src/Detectors/DropperDetector.php
 ### Check environment through the shell wrapper
 
 ```bash
-bash wpma.sh check
+wpma check
 ```
 
 ## Security scope and limitations
