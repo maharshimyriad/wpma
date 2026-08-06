@@ -135,10 +135,16 @@ cd wpma
 composer install
 ```
 
+Make the wrapper executable:
+
+```bash
+chmod +x /path/to/wpma/wpma.sh
+```
+
 Add a shell alias in your `~/.bashrc` so you can run WPMA more easily:
 
 ```bash
-alias wpma='/path/to/wpma.sh'
+alias wpma='/path/to/wpma/wpma.sh'
 ```
 
 Reload your shell configuration:
@@ -146,6 +152,8 @@ Reload your shell configuration:
 ```bash
 source ~/.bashrc
 ```
+
+After that, you can run `wpma` from anywhere on the site without changing into the WPMA directory.
 
 Then verify the environment:
 
@@ -180,7 +188,7 @@ wpma scan [path] [options]
 wpma version
 ```
 
-If the alias is not available, use:
+If the alias is not available, use the full script path directly from anywhere:
 
 ```bash
 bash wpma/wpma.sh help

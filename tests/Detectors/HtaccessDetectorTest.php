@@ -384,6 +384,7 @@ HTAC;
             strings:       [],
             variables:     [],
             imports:       [],
+            assignments:   [],
             iocs:          [],
             features:      new FileFeatures(),
             parseErrors:   [],

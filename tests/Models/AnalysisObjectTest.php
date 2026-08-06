@@ -149,6 +149,7 @@ final class AnalysisObjectTest extends TestCase
             strings:       [],
             variables:     [],
             imports:       [],
+            assignments:   [],
             iocs:          [],
             features:      new FileFeatures(),
             parseErrors:   $result->parseErrors,

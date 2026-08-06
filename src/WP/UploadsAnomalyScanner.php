@@ -219,28 +219,23 @@ class UploadsAnomalyScanner
     {
         return Finding::create([
             'ruleId'      => 'UPLD-001',
-            'title'       => sprintf('PHP file in uploads directory: %s', $relPath),
+            'title'       => sprintf('Executable file in uploads directory: %s', $relPath),
             'filePath'    => $absPath,
             'line'        => 0,
-            'severity'    => Severity::CRITICAL,
+            'severity'    => Severity::MEDIUM,
             'confidence'  => Confidence::HIGH,
             'category'    => DetectionCategory::FILE_MANIPULATION,
             'description' => sprintf(
-                'A PHP file (%s) was found at "%s" inside the WordPress uploads directory. '
-                . 'The uploads directory is intended for media files only and should never contain executable PHP code.',
+                'A PHP or server-executable file (%s) was found at "%s" inside the WordPress uploads directory. '
+                . 'WPMA did not detect suspicious behavior in this file during behavioral analysis.',
                 $ext,
                 $relPath,
             ),
-            'explanation' => 'PHP files in wp-content/uploads/ are a critical indicator of compromise. '
-                . 'WordPress ships with .htaccess rules that prevent direct execution of PHP in uploads, '
-                . 'but attackers frequently exploit hosting mis-configurations, disable the .htaccess, '
-                . 'or use the file as part of a multi-stage payload. '
-                . 'Any PHP file in uploads that was not intentionally placed there by a developer '
-                . 'should be treated as a webshell or malware dropper until proven otherwise.',
-            'remediation' => 'Delete this file immediately. Review server access logs to determine how it was written. '
-                . 'Audit wp-content/uploads/ for other PHP files. '
-                . 'Verify your .htaccess in uploads contains the PHP execution block. '
-                . 'Audit WordPress admin accounts for unauthorised access.',
+            'explanation' => 'Some plugins legitimately create PHP placeholder or protection files in uploads, '
+                . 'and empty or defensive files can be benign. However, executable files are unusual in the uploads '
+                . 'directory and should be reviewed to confirm they were created intentionally.',
+            'remediation' => 'Review this file and confirm why executable code is present in uploads. '
+                . 'If it is not expected, remove it and investigate how it was created.',
             'evidence'    => [],
             'tags'        => ['uploads', 'php-in-uploads', 'wp-uploads-anomaly', $ext],
         ]);
@@ -282,7 +277,7 @@ class UploadsAnomalyScanner
     private function makeMagicBytesFinding(string $absPath, string $relPath, string $contentType): Finding
     {
         [$ruleId, $severity, $typeLabel] = match ($contentType) {
-            'php'     => ['UPLD-001', Severity::CRITICAL, 'PHP code (extensionless)'],
+            'php'     => ['UPLD-001', Severity::MEDIUM, 'PHP code (extensionless)'],
             'binary'  => ['UPLD-003', Severity::CRITICAL, 'binary executable (extensionless)'],
             'archive' => ['UPLD-002', Severity::HIGH,     'archive file (extensionless)'],
             default   => ['UPLD-002', Severity::MEDIUM,   'unknown binary content'],
@@ -295,6 +290,31 @@ class UploadsAnomalyScanner
               . 'to a new .php file. The ZIP magic bytes (PK\\x03\\x04) confirm archive content '
               . 'despite the missing or misleading file extension.'
             : '';
+
+        if ($contentType === 'php') {
+            return Finding::create([
+                'ruleId'      => $ruleId,
+                'title'       => sprintf('Executable file in uploads directory: %s', $relPath),
+                'filePath'    => $absPath,
+                'line'        => 0,
+                'severity'    => $severity,
+                'confidence'  => Confidence::HIGH,
+                'category'    => DetectionCategory::FILE_MANIPULATION,
+                'description' => sprintf(
+                    'File "%s" in the WordPress uploads directory was identified as %s by its file header (magic bytes). '
+                    . 'WPMA did not detect suspicious behavior in this file during behavioral analysis.',
+                    $relPath,
+                    $typeLabel,
+                ),
+                'explanation' => 'Some plugins legitimately create PHP placeholder or protection files in uploads, '
+                    . 'and empty or defensive files can be benign. However, executable files are unusual in the uploads '
+                    . 'directory and should be reviewed to confirm they were created intentionally.',
+                'remediation' => 'Review this file and confirm why executable code is present in uploads. '
+                    . 'If it is not expected, remove it and investigate how it was created.',
+                'evidence'    => [],
+                'tags'        => ['uploads', 'wp-uploads-anomaly', 'magic-bytes', $contentType],
+            ]);
+        }
 
         return Finding::create([
             'ruleId'      => $ruleId,
