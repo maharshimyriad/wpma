@@ -1,6 +1,6 @@
 # WPMA
 
-WPMA is a PHP command-line tool for scanning WordPress installations, plugins, themes, uploads directories, individual files, and generic directories for malware-related behavior and integrity issues.
+WPMA is a command-line tool for scanning WordPress installations, plugins, themes, uploads directories, individual files, and generic directories for malware-related behavior and integrity issues.
 
 It combines WordPress integrity verification with deeper per-file malware analysis so that unchanged official files can be treated differently from modified or unexpected local files.
 
@@ -70,9 +70,9 @@ Per file, the analysis pipeline is:
 2. detect encoding
 3. tokenize PHP
 4. extract structured data such as function calls, assignments, variables, imports, and strings
-5. extract features (for example dynamic dispatch and obfuscation-related features)
+5. extract features
 6. extract IOCs
-7. assemble an `AnalysisObject` for detectors
+7. assemble an analysis object for detectors
 
 ## Detection categories
 
@@ -101,7 +101,7 @@ Examples verified in source include:
 
 ## Requirements
 
-From `composer.json`, `wpma.php`, and `wpma.sh`:
+From `composer.json` and `wpma.sh`:
 
 ### Required
 
@@ -121,8 +121,8 @@ From `composer.json`, `wpma.php`, and `wpma.sh`:
 
 ### Platform notes
 
-- The core PHP entry point is `wpma.php`.
-- A Bash wrapper, `wpma.sh`, provides shell-side indexing and pre-filtering.
+- `wpma.sh` is the documented user-facing entry point.
+- The wrapper provides shell-side indexing and pre-filtering.
 - The wrapper contains Windows/Git Bash path handling, so Windows use is supported in the current implementation.
 
 ## Installation
@@ -135,29 +135,19 @@ cd wpma
 composer install
 ```
 
-You can then run either:
-
-```bash
-php wpma.php version
-```
-
-or, if you want the shell wrapper features:
+Then verify the environment:
 
 ```bash
 bash wpma.sh check
+```
+
+And confirm the installed version:
+
+```bash
 bash wpma.sh version
 ```
 
 ## Usage
-
-### PHP entry point
-
-```bash
-php wpma.php scan [target] [options]
-php wpma.php version
-```
-
-### Shell wrapper
 
 ```bash
 bash wpma.sh help
@@ -168,7 +158,7 @@ bash wpma.sh version
 
 ### CLI options
 
-Verified from `src/Cli/Application.php`:
+Verified from the current parser/help implementation:
 
 | Option | Meaning |
 |---|---|
@@ -210,116 +200,110 @@ informational | low | medium | high | critical
 #### Smart scan a WordPress site
 
 ```bash
-php wpma.php scan /var/www/html
-```
-
-#### Smart scan via shell wrapper
-
-```bash
 bash wpma.sh scan /var/www/html
 ```
 
 #### Force full WordPress site target detection
 
 ```bash
-php wpma.php scan /var/www/html --full-site
+bash wpma.sh scan /var/www/html --full-site
 ```
 
 #### Scan WordPress core
 
 ```bash
-php wpma.php scan /var/www/html --core
+bash wpma.sh scan /var/www/html --core
 ```
 
 #### Scan all plugins in a site
 
 ```bash
-php wpma.php scan /var/www/html --plugins
+bash wpma.sh scan /var/www/html --plugins
 ```
 
 #### Scan all themes in a site
 
 ```bash
-php wpma.php scan /var/www/html --themes
+bash wpma.sh scan /var/www/html --themes
 ```
 
 #### Scan a single plugin directory
 
 ```bash
-php wpma.php scan /var/www/html/wp-content/plugins/example-plugin
+bash wpma.sh scan /var/www/html/wp-content/plugins/example-plugin
 ```
 
 #### Scan a single file
 
 ```bash
-php wpma.php scan /var/www/html/wp-content/plugins/example-plugin/example.php --file
+bash wpma.sh scan /var/www/html/wp-content/plugins/example-plugin/example.php --file
 ```
 
 #### Integrity-only scan
 
 ```bash
-php wpma.php scan /var/www/html --quick
+bash wpma.sh scan /var/www/html --quick
 ```
 
 #### Full deep scan
 
 ```bash
-php wpma.php scan /var/www/html --full
+bash wpma.sh scan /var/www/html --full
 ```
 
 #### JSON output
 
 ```bash
-php wpma.php scan /var/www/html --output json
+bash wpma.sh scan /var/www/html --output json
 ```
 
 #### JSON output to a file
 
 ```bash
-php wpma.php scan /var/www/html --json --output-file report.json
+bash wpma.sh scan /var/www/html --json --output-file report.json
 ```
 
 #### Severity filtering
 
 ```bash
-php wpma.php scan /var/www/html --severity high
+bash wpma.sh scan /var/www/html --severity high
 ```
 
 #### Progress output
 
 ```bash
-php wpma.php scan /var/www/html --progress
+bash wpma.sh scan /var/www/html --progress
 ```
 
 #### Quiet mode
 
 ```bash
-php wpma.php scan /var/www/html --quiet
+bash wpma.sh scan /var/www/html --quiet
 ```
 
 #### Disable ANSI color in text output
 
 ```bash
-php wpma.php scan /var/www/html --no-color
+bash wpma.sh scan /var/www/html --no-color
 ```
 
 #### Skip core integrity verification
 
 ```bash
-php wpma.php scan /var/www/html --no-core
+bash wpma.sh scan /var/www/html --no-core
 ```
 
 #### Skip uploads anomaly scanning
 
 ```bash
-php wpma.php scan /var/www/html --no-uploads
+bash wpma.sh scan /var/www/html --no-uploads
 ```
 
 ## Smart mode
 
 Smart mode is the default behavior.
 
-According to `ScanOrchestrator`, the process is:
+According to the current implementation, the process is:
 
 1. discover PHP-relevant files
 2. pre-filter suspicious candidates
@@ -340,7 +324,7 @@ The shell wrapper can also precompute:
 - a full PHP file list
 - a suspicious subset based on grep patterns
 
-That suspicious subset is then passed into PHP so clean candidates can avoid full deep analysis.
+That suspicious subset is then passed into the scanner so clean candidates can avoid full deep analysis.
 
 ## Integrity checking
 
@@ -356,15 +340,9 @@ Verified scope includes:
 
 - `wp-admin/`
 - `wp-includes/`
-- a fixed set of root core PHP files such as `wp-load.php`, `wp-login.php`, `xmlrpc.php`, etc.
+- a fixed set of root core PHP files such as `wp-load.php`, `wp-login.php`, and `xmlrpc.php`
 
 `wp-content/` is intentionally excluded from core integrity verification.
-
-Core integrity statuses are derived from:
-
-- **verified**: local files match the official checksum manifest
-- **modified**: one or more official files differ, are missing, or unexpected files exist in core scope
-- **unavailable** / **checksum unavailable**: official data could not be used
 
 ### Plugins
 
@@ -372,7 +350,7 @@ The plugin checker uses this strategy:
 
 1. WordPress.org plugin checksum API (`sha256` comparison)
 2. WP-CLI fallback when the API fails operationally and WP-CLI is available
-3. `unavailable` for plugins not available from WordPress.org (for example custom/private/premium plugins)
+3. `unavailable` for plugins not available from WordPress.org
 4. `checksum_unavailable` when checksum data cannot be retrieved reliably
 
 The checker enumerates **all local plugin files**, not just PHP files, so extensionless or unexpected files are part of the integrity comparison.
@@ -473,7 +451,7 @@ FINDINGS
 
 ## Exit codes
 
-From `src/Cli/Application.php`:
+From the current implementation:
 
 | Code | Meaning |
 |---|---|
@@ -481,7 +459,7 @@ From `src/Cli/Application.php`:
 | `1` | Scan completed and findings were present |
 | `2` | Invalid target, CLI error, or another fatal error |
 
-From `wpma.sh check`:
+For `bash wpma.sh check`:
 
 | Code | Meaning |
 |---|---|
@@ -523,8 +501,6 @@ wpma/
 
 ## Development and testing
 
-Verified from `phpunit.xml` and repository layout:
-
 ### Install dependencies
 
 ```bash
@@ -561,7 +537,7 @@ bash wpma.sh check
 - Integrity verification and behavioral analysis serve different purposes and are intended to complement each other.
 - A verified official file can still matter operationally, but smart mode is intentionally designed to avoid unnecessary deep analysis of unchanged official components.
 - Malware findings should be investigated in context before taking action.
-- Files outside official checksum ecosystems (for example custom or premium plugins) may not have the same integrity coverage.
+- Files outside official checksum ecosystems may not have the same integrity coverage.
 - Shell acceleration in `wpma.sh` depends on `find` and `grep`; without them, PHP fallbacks are used.
 
 ## License

@@ -1,0 +1,32 @@
+{
+    "name": "wpma/wpma",
+    "description": "WordPress Malware Analysis CLI — detect malware, webshells, backdoors, obfuscation, and IOCs in WordPress installations.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.0",
+        "symfony/console": "^6.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0",
+        "fakerphp/faker": "^1.23"
+    },
+    "autoload": {
+        "psr-4": {
+            "Wpma\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Wpma\\Tests\\": "tests/"
+        }
+    },
+    "bin": [
+        "wpma.php"
+    ],
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "minimum-stability": "stable"
+}
