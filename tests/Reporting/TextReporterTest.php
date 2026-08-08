@@ -105,6 +105,73 @@ final class TextReporterTest extends TestCase
             'Old SUSPICIOUS IOCs section header must not appear');
     }
 
+    public function testUnavailablePremiumCustomPluginShowsSkippedMalwareAnalysisNote(): void
+    {
+        $report = $this->makeReport(
+            pluginIntegrity: [
+                'premium-plugin' => [
+                    'status' => 'unavailable',
+                    'version' => '2.1.0',
+                    'method' => 'unavailable',
+                    'officialCount' => 0,
+                    'localCount' => 2,
+                    'okCount' => 0,
+                    'modifiedFiles' => [],
+                    'unexpectedFiles' => [],
+                    'missingFiles' => [],
+                    'officialSourceAvailable' => false,
+                    'malwareAnalysisSkipped' => true,
+                ],
+            ],
+        );
+
+        $text = $this->render($report);
+
+        $this->assertStringContainsString('Unverified [premium/custom]', $text);
+        $this->assertStringContainsString('Official WordPress.org release: Not available', $text);
+        $this->assertStringContainsString('Malware analysis: Skipped', $text);
+        $this->assertStringContainsString('NOTES', $text);
+        $this->assertStringContainsString('behavioral malware analysis', $text);
+    }
+
+    public function testMultipleSkippedPremiumCustomPluginsProduceCountedSummaryNote(): void
+    {
+        $report = $this->makeReport(
+            pluginIntegrity: [
+                'premium-one' => [
+                    'status' => 'unavailable',
+                    'version' => '',
+                    'method' => 'unavailable',
+                    'officialCount' => 0,
+                    'localCount' => 1,
+                    'okCount' => 0,
+                    'modifiedFiles' => [],
+                    'unexpectedFiles' => [],
+                    'missingFiles' => [],
+                    'officialSourceAvailable' => false,
+                    'malwareAnalysisSkipped' => true,
+                ],
+                'premium-two' => [
+                    'status' => 'unavailable',
+                    'version' => '',
+                    'method' => 'unavailable',
+                    'officialCount' => 0,
+                    'localCount' => 1,
+                    'okCount' => 0,
+                    'modifiedFiles' => [],
+                    'unexpectedFiles' => [],
+                    'missingFiles' => [],
+                    'officialSourceAvailable' => false,
+                    'malwareAnalysisSkipped' => true,
+                ],
+            ],
+        );
+
+        $text = $this->render($report);
+
+        $this->assertStringContainsString('2 premium/custom plugins were not available through the official', $text);
+    }
+
     // ── NOTE appears after Warnings ───────────────────────────────────────────
 
     public function testNoteAppearsAfterWarningsSection(): void
@@ -272,6 +339,7 @@ final class TextReporterTest extends TestCase
         array $iocs      = [],
         array $warnings  = [],
         float $riskScore = 0.0,
+        array $pluginIntegrity = [],
     ): ScanReport {
         $fileResults = [];
         if ($findings !== []) {
@@ -303,6 +371,7 @@ final class TextReporterTest extends TestCase
             correlations:     [],
             warnings:         $warnings,
             overallRiskScore: $effectiveRisk,
+            pluginIntegrity:  $pluginIntegrity,
         );
     }
 }

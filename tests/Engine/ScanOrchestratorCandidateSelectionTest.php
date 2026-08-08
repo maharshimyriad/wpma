@@ -138,7 +138,7 @@ final class ScanOrchestratorCandidateSelectionTest extends TestCase
         $this->assertStringEndsWith('modified-plugin.php', $report->fileResults[0]->filePath);
     }
 
-    public function testUnavailablePluginStillUsesMalwareCandidates(): void
+    public function testUnavailableSinglePluginScanStillUsesMalwareCandidates(): void
     {
         $pluginDir = $this->createPlugin('custom-plugin', [
             'custom-plugin.php' => "<?php echo 'main';\n",
@@ -440,6 +440,54 @@ final class ScanOrchestratorCandidateSelectionTest extends TestCase
         $this->assertSame(2, $selection['integritySkippedCount']);
     }
 
+    public function testUnavailablePluginIsSkippedDuringNormalPluginsDirectoryScan(): void
+    {
+        $pluginsDir = $this->createPluginsDirectorySite([
+            'verified-plugin' => [
+                'verified-plugin.php' => "<?php echo 'verified';\n",
+            ],
+            'bb-plugin' => [
+                'bb-plugin.php' => "<?php echo 'bb';\n",
+                'suspicious.php' => "<?php eval('bad');\n",
+            ],
+        ]);
+
+        $report = $this->runPluginsDirectoryScan(
+            pluginsDir: $pluginsDir,
+            discoveredFiles: [
+                $pluginsDir . DIRECTORY_SEPARATOR . 'verified-plugin' . DIRECTORY_SEPARATOR . 'verified-plugin.php',
+                $pluginsDir . DIRECTORY_SEPARATOR . 'bb-plugin' . DIRECTORY_SEPARATOR . 'bb-plugin.php',
+                $pluginsDir . DIRECTORY_SEPARATOR . 'bb-plugin' . DIRECTORY_SEPARATOR . 'suspicious.php',
+            ],
+            suspiciousFiles: [
+                $pluginsDir . DIRECTORY_SEPARATOR . 'verified-plugin' . DIRECTORY_SEPARATOR . 'verified-plugin.php',
+                $pluginsDir . DIRECTORY_SEPARATOR . 'bb-plugin' . DIRECTORY_SEPARATOR . 'suspicious.php',
+            ],
+            integrities: [
+                'verified-plugin' => new PluginIntegrity(
+                    status: PluginIntegrity::VERIFIED,
+                    slug: 'verified-plugin',
+                    version: '1.0.0',
+                    method: 'fake',
+                    officialCount: 1,
+                    localCount: 1,
+                    okCount: 1,
+                ),
+                'bb-plugin' => new PluginIntegrity(
+                    status: PluginIntegrity::UNAVAILABLE,
+                    slug: 'bb-plugin',
+                    version: '2.10.3.1',
+                ),
+            ],
+        );
+
+        $this->assertSame(0, $report->filesScanned);
+        $this->assertSame([], $report->fileResults);
+        $this->assertSame(0.0, $report->overallRiskScore);
+        $this->assertTrue($report->pluginIntegrity['bb-plugin']['malwareAnalysisSkipped']);
+        $this->assertFalse($report->pluginIntegrity['bb-plugin']['officialSourceAvailable']);
+    }
+
     public function testPluginsDirectoryMixedScanAppliesPerPluginIntegritySelection(): void
     {
         $pluginsDir = $this->createPluginsDirectorySite([
@@ -524,17 +572,18 @@ final class ScanOrchestratorCandidateSelectionTest extends TestCase
             ],
         );
 
-        $this->assertSame(3, $report->filesScanned);
+        $this->assertSame(2, $report->filesScanned);
         $scannedPaths = array_map(static fn ($fr): string => str_replace('\\', '/', $fr->filePath), $report->fileResults);
         sort($scannedPaths);
 
         $this->assertContains(str_replace('\\', '/', $pluginsDir . DIRECTORY_SEPARATOR . 'modified-plugin' . DIRECTORY_SEPARATOR . 'modified-plugin.php'), $scannedPaths);
         $this->assertContains(str_replace('\\', '/', $pluginsDir . DIRECTORY_SEPARATOR . 'mailchimp' . DIRECTORY_SEPARATOR . 'license.php'), $scannedPaths);
-        $this->assertContains(str_replace('\\', '/', $pluginsDir . DIRECTORY_SEPARATOR . 'bb-plugin' . DIRECTORY_SEPARATOR . 'custom.php'), $scannedPaths);
+        $this->assertNotContains(str_replace('\\', '/', $pluginsDir . DIRECTORY_SEPARATOR . 'bb-plugin' . DIRECTORY_SEPARATOR . 'custom.php'), $scannedPaths);
         $this->assertNotContains(str_replace('\\', '/', $pluginsDir . DIRECTORY_SEPARATOR . 'verified-plugin' . DIRECTORY_SEPARATOR . 'verified-plugin.php'), $scannedPaths);
         $this->assertNotContains(str_replace('\\', '/', $pluginsDir . DIRECTORY_SEPARATOR . 'verified-plugin' . DIRECTORY_SEPARATOR . 'helper.php'), $scannedPaths);
         $this->assertNotContains(str_replace('\\', '/', $pluginsDir . DIRECTORY_SEPARATOR . 'modified-plugin' . DIRECTORY_SEPARATOR . 'helper.php'), $scannedPaths);
         $this->assertNotContains(str_replace('\\', '/', $pluginsDir . DIRECTORY_SEPARATOR . 'mailchimp' . DIRECTORY_SEPARATOR . 'mailchimp.php'), $scannedPaths);
+        $this->assertTrue($report->pluginIntegrity['bb-plugin']['malwareAnalysisSkipped']);
     }
 
     /**

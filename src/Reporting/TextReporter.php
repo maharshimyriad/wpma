@@ -184,10 +184,13 @@ class TextReporter implements ReporterInterface
         $out[] = $this->bold('PLUGIN INTEGRITY');
         $out[] = str_repeat('─', 50);
 
+        $skippedPremiumCustomCount = 0;
+
         foreach ($report->pluginIntegrity as $slug => $info) {
             $status  = $info['status'];
             $version = $info['version'] ? " v{$info['version']}" : '';
             $method  = $info['method'] !== 'unavailable' ? " [{$info['method']}]" : '';
+            $malwareAnalysisSkipped = (bool) ($info['malwareAnalysisSkipped'] ?? false);
 
             $icon = match ($status) {
                 'verified'             => $this->color('✔', 'green'),
@@ -201,13 +204,21 @@ class TextReporter implements ReporterInterface
             $label = match ($status) {
                 'verified'             => $this->color('Verified', 'green'),
                 'modified'             => $this->color('MODIFIED', 'red'),
-                'unavailable'          => $this->color('Unavailable (premium/custom)', 'yellow'),
+                'unavailable'          => $this->color('Unverified [premium/custom]', 'yellow'),
                 'error'                => $this->color('Check failed', 'yellow'),
                 'checksum_unavailable' => $this->color('Checksum API unavailable', 'yellow'),
                 default                => $status,
             };
 
             $out[] = sprintf('  %s  %-30s %s%s%s', $icon, $slug, $label, $version, $method);
+
+            if ($status === 'unavailable') {
+                $out[] = '       Official WordPress.org release: Not available';
+                if ($malwareAnalysisSkipped) {
+                    $out[] = '       Malware analysis: Skipped';
+                    $skippedPremiumCustomCount++;
+                }
+            }
 
             // Show debug stats if available
             if (isset($info['officialCount']) && $info['officialCount'] > 0) {
@@ -251,6 +262,24 @@ class TextReporter implements ReporterInterface
                 }
             }
         }
+
+        if ($skippedPremiumCustomCount > 0) {
+            $out[] = '';
+            $out[] = $this->bold('NOTES');
+            $out[] = str_repeat('─', 50);
+            if ($skippedPremiumCustomCount === 1) {
+                $out[] = '  1 premium/custom plugin was not available through the official';
+            } else {
+                $out[] = sprintf('  %d premium/custom plugins were not available through the official', $skippedPremiumCustomCount);
+            }
+            $out[] = '  WordPress.org verification source and were excluded from';
+            $out[] = '  behavioral malware analysis.';
+            $out[] = '';
+            $out[] = '  WPMA cannot verify the integrity or security of these plugins.';
+            $out[] = '  Review them separately using the original vendor package or';
+            $out[] = '  source.';
+        }
+
         $out[] = '';
         return $out;
     }

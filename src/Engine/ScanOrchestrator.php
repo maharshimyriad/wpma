@@ -58,6 +58,9 @@ class ScanOrchestrator
     /** @var array<string, array{pluginDir: string, wpRoot: string}> slug => target */
     private array $pluginIntegrityTargets = [];
 
+    /** @var array<string, true> */
+    private array $malwareAnalysisSkippedPlugins = [];
+
     private ?string $verifiedCoreRoot = null;
 
     public function getPluginIntegrityResults(): array
@@ -521,16 +524,19 @@ class ScanOrchestrator
     {
         $out = [];
         foreach ($this->pluginIntegrityResults as $slug => $integrity) {
+            $skippedMalwareAnalysis = isset($this->malwareAnalysisSkippedPlugins[$slug]);
             $out[$slug] = [
-                'status'          => $integrity->status,
-                'version'         => $integrity->version,
-                'method'          => $integrity->method,
-                'officialCount'   => $integrity->officialCount,
-                'localCount'      => $integrity->localCount,
-                'okCount'         => $integrity->okCount,
-                'modifiedFiles'   => $integrity->modifiedFiles,
-                'unexpectedFiles' => $integrity->unexpectedFiles,
-                'missingFiles'    => $integrity->missingFiles,
+                'status'                  => $integrity->status,
+                'version'                 => $integrity->version,
+                'method'                  => $integrity->method,
+                'officialCount'           => $integrity->officialCount,
+                'localCount'              => $integrity->localCount,
+                'okCount'                 => $integrity->okCount,
+                'modifiedFiles'           => $integrity->modifiedFiles,
+                'unexpectedFiles'         => $integrity->unexpectedFiles,
+                'missingFiles'            => $integrity->missingFiles,
+                'officialSourceAvailable' => !$integrity->isUnavailable(),
+                'malwareAnalysisSkipped'  => $skippedMalwareAnalysis,
             ];
         }
         return $out;
@@ -591,10 +597,6 @@ class ScanOrchestrator
         $initialSelected = $selected;
 
         foreach ($this->pluginIntegrityResults as $slug => $integrity) {
-            if ($integrity->isUnavailable()) {
-                continue;
-            }
-
             if ($slug === 'core') {
                 $wpRoot = $this->verifiedCoreRoot ?? $this->resolveCoreIntegrityRoot();
                 if ($wpRoot === null) {
@@ -608,6 +610,14 @@ class ScanOrchestrator
 
             $componentDir = $this->resolvePluginDirForSlug($slug);
             if ($componentDir === '') {
+                continue;
+            }
+
+            if ($integrity->isUnavailable()) {
+                if ($this->shouldSkipBehavioralAnalysisForUnavailablePlugin()) {
+                    $this->removePrefixedFilesFromSelection($selected, $componentDir);
+                    $this->malwareAnalysisSkippedPlugins[$slug] = true;
+                }
                 continue;
             }
 
@@ -772,9 +782,13 @@ class ScanOrchestrator
         $version = $integrity->version !== '' ? " v{$integrity->version}" : '';
 
         if ($integrity->isUnavailable()) {
-            $status = $integrity->status === \Wpma\WP\PluginIntegrity::CHECKSUM_UNAVAILABLE
-                ? $this->formatStatus('? API unreachable', 'yellow')
-                : $this->formatStatus('? not on WP.org', 'yellow');
+            if ($integrity->status === \Wpma\WP\PluginIntegrity::CHECKSUM_UNAVAILABLE) {
+                $status = $this->formatStatus('? API unreachable', 'yellow');
+            } elseif ($this->shouldSkipBehavioralAnalysisForUnavailablePlugin()) {
+                $status = $this->formatStatus('⚠ Unverified [premium/custom]  Official WordPress.org release: Not available  Malware analysis: Skipped', 'yellow');
+            } else {
+                $status = $this->formatStatus('⚠ Unverified [premium/custom]  Official WordPress.org release: Not available', 'yellow');
+            }
         } elseif ($integrity->isVerified()) {
             $status = $this->formatStatus('✔ verified', 'green');
             if ($integrity->officialCount > 0) {
@@ -847,6 +861,15 @@ class ScanOrchestrator
     {
         return $this->config->checkUploads
             && in_array($this->config->targetType, [ScanTargetType::WORDPRESS_SITE, ScanTargetType::UPLOADS_DIRECTORY], true);
+    }
+
+    private function shouldSkipBehavioralAnalysisForUnavailablePlugin(): bool
+    {
+        return in_array(
+            $this->config->targetType,
+            [ScanTargetType::WORDPRESS_SITE, ScanTargetType::PLUGINS_DIRECTORY],
+            true
+        );
     }
 
     private function resolveCoreIntegrityRoot(): ?string
