@@ -30,6 +30,12 @@ final class CsvTaskReporter
         }
 
         try {
+            fputcsv($handle, ['WPMA SECURITY SCAN - REMEDIATION CHECKLIST']);
+            fputcsv($handle, []);
+            fputcsv($handle, ['Need a helping hand?']);
+            fputcsv($handle, ['If you need assistance reviewing or resolving these findings, you can share this report with Myriad Solutionz at https://myriadsolutionz.com/']);
+            fputcsv($handle, ['Please review each task and update the Status column as you work through the checklist.']);
+            fputcsv($handle, []);
             fputcsv($handle, self::HEADER);
 
             $rows = $this->buildRows($report);

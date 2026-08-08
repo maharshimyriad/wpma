@@ -33,7 +33,7 @@ final class CsvTaskReporterTest extends TestCase
         parent::tearDown();
     }
 
-    public function testWriteCreatesCsvFileWithHeader(): void
+    public function testWriteCreatesCsvFileWithHeadingSupportSectionAndHeader(): void
     {
         $reporter = new CsvTaskReporter();
         $path = $this->tmpDir . DIRECTORY_SEPARATOR . 'report.csv';
@@ -43,10 +43,16 @@ final class CsvTaskReporterTest extends TestCase
         $this->assertSame(0, $count);
         $this->assertFileExists($path);
         $rows = $this->readCsv($path);
+        $this->assertSame(['WPMA SECURITY SCAN - REMEDIATION CHECKLIST'], $rows[0]);
+        $this->assertSame([null], $rows[1]);
+        $this->assertSame(['Need a helping hand?'], $rows[2]);
+        $this->assertSame(['If you need assistance reviewing or resolving these findings, you can share this report with Myriad Solutionz at https://myriadsolutionz.com/'], $rows[3]);
+        $this->assertSame(['Please review each task and update the Status column as you work through the checklist.'], $rows[4]);
+        $this->assertSame([null], $rows[5]);
         $this->assertSame([
             'Status', 'Priority', 'Category', 'Task', 'Location', 'Details', 'Recommended Action', 'Rule',
-        ], $rows[0]);
-        $this->assertCount(1, $rows);
+        ], $rows[6]);
+        $this->assertCount(7, $rows);
     }
 
     public function testExistingFindingBecomesActionableTask(): void
@@ -151,8 +157,8 @@ final class CsvTaskReporterTest extends TestCase
         $reporter->write($this->makeReport(findings: [$finding]), $path);
 
         $rows = $this->readCsv($path);
-        $this->assertSame("Value with comma, quote \" and\nmultiple lines", $rows[1][5]);
-        $this->assertSame("Fix, then \"review\"\ncarefully", $rows[1][6]);
+        $this->assertSame("Value with comma, quote \" and\nmultiple lines", $rows[7][5]);
+        $this->assertSame("Fix, then \"review\"\ncarefully", $rows[7][6]);
     }
 
     public function testRunningWithoutCsvDoesNotCreateFileImplicitly(): void
@@ -160,7 +166,7 @@ final class CsvTaskReporterTest extends TestCase
         $this->assertSame([], glob($this->tmpDir . DIRECTORY_SEPARATOR . '*.csv') ?: []);
     }
 
-    public function testZeroFindingsStillProducesValidHeaderOnlyCsv(): void
+    public function testZeroFindingsStillProducesHeadingSupportSectionAndHeaderOnlyCsv(): void
     {
         $reporter = new CsvTaskReporter();
         $path = $this->tmpDir . DIRECTORY_SEPARATOR . 'empty.csv';
@@ -168,7 +174,14 @@ final class CsvTaskReporterTest extends TestCase
 
         $this->assertSame(0, $count);
         $rows = $this->readCsv($path);
-        $this->assertCount(1, $rows);
+        $this->assertSame(['WPMA SECURITY SCAN - REMEDIATION CHECKLIST'], $rows[0]);
+        $this->assertSame(['Need a helping hand?'], $rows[2]);
+        $this->assertSame(['If you need assistance reviewing or resolving these findings, you can share this report with Myriad Solutionz at https://myriadsolutionz.com/'], $rows[3]);
+        $this->assertSame(['Please review each task and update the Status column as you work through the checklist.'], $rows[4]);
+        $this->assertSame([
+            'Status', 'Priority', 'Category', 'Task', 'Location', 'Details', 'Recommended Action', 'Rule',
+        ], $rows[6]);
+        $this->assertCount(7, $rows);
     }
 
     public function testJsonOutputRemainsUnchanged(): void
