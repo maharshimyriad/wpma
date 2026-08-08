@@ -13,7 +13,7 @@ At a high level, it does two complementary things:
 - **Integrity verification** checks WordPress core and WordPress.org plugins against official checksums.
 - **Malware analysis** inspects file content for suspicious behaviors such as backdoors, droppers, SEO spam, malicious redirects, credential theft, and dangerous `.htaccess` directives.
 
-In its default **smart scan** mode, WPMA uses integrity results to avoid unnecessary deep analysis of verified official files while keeping modified or unexpected files eligible for deeper inspection.
+In its default **smart scan** mode, WPMA uses integrity results to avoid unnecessary deep analysis of verified official files while keeping modified or unexpected files eligible for deeper inspection. For normal WordPress site scans and plugins-directory scans, plugins that do not have an official WordPress.org integrity source are reported as **Unverified [premium/custom]** and excluded from behavioral malware analysis for that plugin directory.
 
 ## Key features
 
@@ -35,6 +35,7 @@ Verified from the current implementation:
 - Shell-accelerated indexing and pattern filtering via `wpma.sh` when `find` and `grep` are available
 - WordPress core checksum verification using the official WordPress.org core checksums API
 - Plugin integrity verification using the WordPress.org plugin checksum API, with a WP-CLI fallback path in the plugin checker
+- Premium/custom plugin classification when no official WordPress.org integrity source is available, with clear reporting and skipped behavioral malware analysis during normal site/plugins-directory scans
 - Uploads anomaly scanning for PHP files, archives, executables, and scripts inside `wp-content/uploads`
 - Behavioral detectors for:
   - command execution and dangerous backdoor sinks
@@ -355,9 +356,10 @@ The implemented smart-selection rules are:
 
 - **Verified core files** are removed from deep malware analysis.
 - **Verified plugin files** are removed from deep malware analysis.
-- **Modified or unexpected files** in core/plugins remain eligible for deep analysis.
-- **Unavailable checksum sources** do not cause files to be skipped.
-- **`--full`** disables this verified-file skipping and deep-scans everything in scope.
+- **Modified or unexpected files** in verified core/plugins remain eligible for deep analysis.
+- **Unverified premium/custom plugins** without an official WordPress.org integrity source are excluded from behavioral malware analysis during normal WordPress site scans and `wp-content/plugins` scans.
+- That exclusion applies only to the identified unverified plugin directory; files outside that plugin remain eligible for normal analysis.
+- **`--full`** preserves its existing meaning and disables verified-file skipping for components that have official integrity coverage; it does not automatically override the unverified premium/custom plugin behavior.
 - **`--quick`** skips the deep malware scan entirely.
 
 The shell wrapper can also precompute:
@@ -391,7 +393,7 @@ The plugin checker uses this strategy:
 
 1. WordPress.org plugin checksum API (`sha256` comparison)
 2. WP-CLI fallback when the API fails operationally and WP-CLI is available
-3. `unavailable` for plugins not available from WordPress.org
+3. `unavailable` when no official WordPress.org checksum source is available for the plugin
 4. `checksum_unavailable` when checksum data cannot be retrieved reliably
 
 The checker enumerates **all local plugin files**, not just PHP files, so extensionless or unexpected files are part of the integrity comparison.
@@ -404,8 +406,8 @@ The checker enumerates **all local plugin files**, not just PHP files, so extens
 | Modified | Official files differ from the official release |
 | Missing | Files in the official manifest are absent locally |
 | Unexpected / extra | Local files exist that are not in the official manifest |
-| Unavailable | No official checksum source is available for that component |
-| Checksum unavailable | Checksum retrieval failed operationally |
+| Unavailable | No official WordPress.org checksum source is available for that plugin; in normal site/plugins scans this is reported as `Unverified [premium/custom]` and behavioral malware analysis is skipped for that plugin directory. This does not mean the plugin is clean, and it does not mean the plugin is malicious. |
+| Checksum unavailable | Checksum retrieval failed operationally; this is distinct from a plugin simply not being available from WordPress.org |
 
 ## Malware findings
 
@@ -434,7 +436,7 @@ The text report highlights:
 - finding title and rule ID
 - details/description
 - remediation/fix guidance
-- suspicious IOCs
+- a final `NOTES` section for suspicious indicators and other report-level coverage notes
 - integrity summaries
 - warnings
 
@@ -488,6 +490,23 @@ FINDINGS
           Rule    : BACK-007
           Details : This file performs suspicious credential exfiltration behavior with a proven relationship between credential-like input and a specific outbound transmission.
           Fix     : Inspect this outbound transmission immediately.
+
+PLUGIN INTEGRITY
+──────────────────────────────────────────────────
+  ✔  woocommerce                   Verified v11.0.0 [api]
+  ?  premium-plugin                Unverified [premium/custom] v2.1.0
+       Official WordPress.org release: Not available
+       Malware analysis: Skipped
+
+NOTES
+──────────────────────────────────────────────────
+  1 premium/custom plugin was not available through the official
+  WordPress.org verification source and were excluded from
+  behavioral malware analysis.
+
+  WPMA cannot verify the integrity or security of these plugins.
+  Review them separately using the original vendor package or
+  source.
 ```
 
 ## Exit codes
@@ -579,6 +598,7 @@ wpma check
 - A verified official file can still matter operationally, but smart mode is intentionally designed to avoid unnecessary deep analysis of unchanged official components.
 - Malware findings should be investigated in context before taking action.
 - Files outside official checksum ecosystems may not have the same integrity coverage.
+- For normal WordPress site scans and plugins-directory scans, a plugin without an official WordPress.org integrity source is reported as `Unverified [premium/custom]` and excluded from behavioral malware analysis for that plugin directory. This is a coverage limitation, not a trust or whitelist decision, and it does not mean the plugin is clean or safe.
 - Shell acceleration in `wpma.sh` depends on `find` and `grep`; without them, PHP fallbacks are used.
 
 ## License
