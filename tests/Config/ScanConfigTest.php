@@ -228,6 +228,12 @@ final class ScanConfigTest extends TestCase
         $this->assertSame($expected, $config->outputFormat);
     }
 
+    public function testFromCliOptionsCsvFlagDoesNotChangePrimaryOutputFormat(): void
+    {
+        $config = ScanConfig::fromCliOptions('/wp', ['csv' => true]);
+        $this->assertSame(OutputFormat::TEXT, $config->outputFormat);
+    }
+
     public static function allOutputFormatValuesProvider(): array
     {
         return [

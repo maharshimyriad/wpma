@@ -14,6 +14,7 @@ use Wpma\Engine\ScanPlan;
 use Wpma\Engine\ScanProgress;
 use Wpma\Models\OutputFormat;
 use Wpma\Models\Severity;
+use Wpma\Reporting\CsvTaskReporter;
 use Wpma\Reporting\JsonReporter;
 use Wpma\Reporting\TextReporter;
 
@@ -138,6 +139,21 @@ class Application
             echo $output;
         }
 
+        if (!empty($options['csv'])) {
+            $csvPath = self::generateCsvReportPath();
+            try {
+                $taskCount = (new CsvTaskReporter())->write($report, $csvPath);
+            } catch (\Throwable $e) {
+                fwrite(STDERR, "Error: could not write CSV output file: {$csvPath}\n");
+                exit(2);
+            }
+
+            echo "\nCSV REPORT\n";
+            echo "──────────────────────────────────────────────────\n";
+            echo sprintf("  Tasks generated : %d\n", $taskCount);
+            echo sprintf("  Output          : %s\n", basename($csvPath));
+        }
+
         // Exit code: 0 = clean, 1 = findings, 2 = error
         $hasFindings = array_sum(array_map(fn($fr) => count($fr->findings), $report->fileResults)) > 0;
         exit($hasFindings ? 1 : 0);
@@ -172,6 +188,7 @@ class Application
             'plugins'         => false,
             'themes'          => false,
             'file'            => false,
+            'csv'             => false,
         ];
 
         $booleanFlags = [
@@ -188,6 +205,7 @@ class Application
             '--plugins'   => 'plugins',
             '--themes'    => 'themes',
             '--file'      => 'file',
+            '--csv'       => 'csv',
         ];
 
         $valueFlags = [
@@ -285,6 +303,7 @@ Scope flags:
 Output:
   --output [text|json]                 Output format (default: text)
   --json                               Shortcut for --output json
+  --csv                                Generate an actionable remediation checklist CSV in addition to the terminal report
   --output-file <path>                 Write report to file
   --severity [info|low|medium|high|critical]  Minimum severity (default: informational)
   --no-color                           Disable ANSI colors
@@ -308,5 +327,10 @@ Exit codes:
   2   Fatal error
 
 HELP;
+    }
+
+    private static function generateCsvReportPath(): string
+    {
+        return getcwd() . DIRECTORY_SEPARATOR . 'wpma-report-' . date('Y-m-d-Hi') . '.csv';
     }
 }
