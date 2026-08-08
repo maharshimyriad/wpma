@@ -60,14 +60,7 @@ class TextReporter implements ReporterInterface
             // Still render Plugin Integrity even when no threats found
             $out = array_merge($out, $this->renderPluginIntegrity($report));
 
-            // IOC notice — even on a clean scan, flag collected indicators
-            if (!empty($report->allIocs)) {
-                $out[] = $this->bold('NOTE');
-                $out[] = str_repeat('─', 50);
-                $out[] = '  Additional suspicious indicators were found during analysis.';
-                $out[] = '  Review the findings above for details and context.';
-                $out[] = '';
-            }
+            $out = array_merge($out, $this->renderNotes($report));
 
             return implode("\n", $out);
         }
@@ -119,16 +112,7 @@ class TextReporter implements ReporterInterface
             $out[] = '';
         }
 
-        // IOC notice — emitted last, only when IOCs were collected.
-        // Full IOC data is available in JSON output; text output intentionally
-        // omits raw values to reduce noise for human readers.
-        if (!empty($report->allIocs)) {
-            $out[] = $this->bold('NOTE');
-            $out[] = str_repeat('─', 50);
-            $out[] = '  Additional suspicious indicators were found during analysis.';
-            $out[] = '  Review the findings above for details and context.';
-            $out[] = '';
-        }
+        $out = array_merge($out, $this->renderNotes($report));
 
         return implode("\n", $out);
     }
@@ -263,10 +247,29 @@ class TextReporter implements ReporterInterface
             }
         }
 
+        $out[] = '';
+        return $out;
+    }
+
+    private function renderNotes(\Wpma\Models\ScanReport $report): array
+    {
+        $skippedPremiumCustomCount = 0;
+        foreach ($report->pluginIntegrity as $info) {
+            if (($info['status'] ?? null) === 'unavailable' && (bool) ($info['malwareAnalysisSkipped'] ?? false)) {
+                $skippedPremiumCustomCount++;
+            }
+        }
+
+        $hasIocs = !empty($report->allIocs);
+        if ($skippedPremiumCustomCount === 0 && !$hasIocs) {
+            return [];
+        }
+
+        $out = [];
+        $out[] = $this->bold('NOTES');
+        $out[] = str_repeat('─', 50);
+
         if ($skippedPremiumCustomCount > 0) {
-            $out[] = '';
-            $out[] = $this->bold('NOTES');
-            $out[] = str_repeat('─', 50);
             if ($skippedPremiumCustomCount === 1) {
                 $out[] = '  1 premium/custom plugin was not available through the official';
             } else {
@@ -280,7 +283,16 @@ class TextReporter implements ReporterInterface
             $out[] = '  source.';
         }
 
+        if ($hasIocs) {
+            if ($skippedPremiumCustomCount > 0) {
+                $out[] = '';
+            }
+            $out[] = '  Additional suspicious indicators were found during analysis.';
+            $out[] = '  Review the findings above for details and context.';
+        }
+
         $out[] = '';
+
         return $out;
     }
 

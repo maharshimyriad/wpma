@@ -23,35 +23,37 @@ use Wpma\Reporting\TextReporter;
  *
  * Rules under test:
  *   - Raw IOC values must NOT appear in text output
- *   - Zero IOCs  => no NOTE section
- *   - One IOC    => NOTE appears once
- *   - Many IOCs  => exactly one NOTE (no per-IOC duplication)
- *   - NOTE is the last substantive section
+ *   - Zero IOCs  => no NOTES section unless other notes exist
+ *   - One IOC    => NOTES appears once
+ *   - Many IOCs  => exactly one suspicious-indicator note
+ *   - Premium/custom + IOC notes are combined into one final NOTES section
+ *   - NOTES is the last substantive section
  *   - Severity counts and overall risk are unaffected by IOC presence
  *   - JSON output retains complete IOC data
  */
 final class TextReporterTest extends TestCase
 {
-    // ── No IOCs => no NOTE ────────────────────────────────────────────────────
+    // ── No IOCs => no NOTES unless other note content exists ──────────────────
 
-    public function testNoIocsProducesNoNote(): void
+    public function testNeitherPremiumCustomNorIocsProducesNoNotesSection(): void
     {
         $report = $this->makeReport(iocs: []);
         $text   = $this->render($report);
 
-        $this->assertStringNotContainsString('NOTE', $text);
+        $this->assertStringNotContainsString('NOTES', $text);
         $this->assertStringNotContainsString('suspicious indicators', $text);
     }
 
-    // ── One IOC => NOTE appears ───────────────────────────────────────────────
+    // ── One IOC => NOTES appears ──────────────────────────────────────────────
 
-    public function testOneIocProducesNote(): void
+    public function testSuspiciousIndicatorNoteOnlyUsesSingleNotesSection(): void
     {
         $report = $this->makeReport(iocs: [$this->makeIoc('evil.ru')]);
         $text   = $this->render($report);
 
-        $this->assertStringContainsString('NOTE', $text);
+        $this->assertStringContainsString('NOTES', $text);
         $this->assertStringContainsString('suspicious indicators', $text);
+        $this->assertSame(1, substr_count($text, 'NOTES'));
     }
 
     // ── Many IOCs => exactly one NOTE ────────────────────────────────────────
@@ -69,8 +71,9 @@ final class TextReporterTest extends TestCase
         $this->assertSame(
             1,
             substr_count($text, 'Additional suspicious indicators were found'),
-            'Exactly one NOTE line must appear regardless of IOC count',
+            'Exactly one suspicious-indicator note must appear regardless of IOC count',
         );
+        $this->assertSame(1, substr_count($text, 'NOTES'));
     }
 
     // ── Raw IOC values do not appear in text output ───────────────────────────
@@ -105,7 +108,7 @@ final class TextReporterTest extends TestCase
             'Old SUSPICIOUS IOCs section header must not appear');
     }
 
-    public function testUnavailablePremiumCustomPluginShowsSkippedMalwareAnalysisNote(): void
+    public function testPremiumCustomNoteOnlyUsesSingleNotesSection(): void
     {
         $report = $this->makeReport(
             pluginIntegrity: [
@@ -132,6 +135,37 @@ final class TextReporterTest extends TestCase
         $this->assertStringContainsString('Malware analysis: Skipped', $text);
         $this->assertStringContainsString('NOTES', $text);
         $this->assertStringContainsString('behavioral malware analysis', $text);
+        $this->assertStringNotContainsString('Additional suspicious indicators were found during analysis.', $text);
+        $this->assertSame(1, substr_count($text, 'NOTES'));
+    }
+
+    public function testBothPremiumCustomAndSuspiciousIndicatorMessagesAreCombinedUnderOneNotesSection(): void
+    {
+        $report = $this->makeReport(
+            iocs: [$this->makeIoc('evil.ru')],
+            pluginIntegrity: [
+                'premium-plugin' => [
+                    'status' => 'unavailable',
+                    'version' => '2.1.0',
+                    'method' => 'unavailable',
+                    'officialCount' => 0,
+                    'localCount' => 2,
+                    'okCount' => 0,
+                    'modifiedFiles' => [],
+                    'unexpectedFiles' => [],
+                    'missingFiles' => [],
+                    'officialSourceAvailable' => false,
+                    'malwareAnalysisSkipped' => true,
+                ],
+            ],
+        );
+
+        $text = $this->render($report);
+
+        $this->assertSame(1, substr_count($text, 'NOTES'));
+        $this->assertStringContainsString('behavioral malware analysis', $text);
+        $this->assertStringContainsString('Additional suspicious indicators were found during analysis.', $text);
+        $this->assertStringNotContainsString("\nNOTE\n", $text);
     }
 
     public function testMultipleSkippedPremiumCustomPluginsProduceCountedSummaryNote(): void
@@ -172,9 +206,9 @@ final class TextReporterTest extends TestCase
         $this->assertStringContainsString('2 premium/custom plugins were not available through the official', $text);
     }
 
-    // ── NOTE appears after Warnings ───────────────────────────────────────────
+    // ── NOTES appears after Warnings / Findings and is final ──────────────────
 
-    public function testNoteAppearsAfterWarningsSection(): void
+    public function testNotesAppearsAfterWarningsSection(): void
     {
         $report = $this->makeReport(
             findings: [$this->makeFinding()],
@@ -184,15 +218,15 @@ final class TextReporterTest extends TestCase
         $text = $this->render($report);
 
         $posWarnings = strpos($text, 'WARNINGS');
-        $posNote     = strpos($text, 'NOTE');
+        $posNotes    = strpos($text, 'NOTES');
 
         $this->assertNotFalse($posWarnings, 'WARNINGS section must be present');
-        $this->assertNotFalse($posNote,     'NOTE must be present');
-        $this->assertGreaterThan($posWarnings, $posNote,
-            'NOTE must appear after WARNINGS');
+        $this->assertNotFalse($posNotes,    'NOTES must be present');
+        $this->assertGreaterThan($posWarnings, $posNotes,
+            'NOTES must appear after WARNINGS');
     }
 
-    public function testNoteAppearsAfterFindingsSection(): void
+    public function testNotesAppearsAfterFindingsSection(): void
     {
         $report = $this->makeReport(
             findings: [$this->makeFinding()],
@@ -201,12 +235,44 @@ final class TextReporterTest extends TestCase
         $text = $this->render($report);
 
         $posFindings = strpos($text, 'FINDINGS');
-        $posNote     = strpos($text, 'NOTE');
+        $posNotes    = strpos($text, 'NOTES');
 
-        $this->assertNotFalse($posNote,     'NOTE must be present');
+        $this->assertNotFalse($posNotes,    'NOTES must be present');
         $this->assertNotFalse($posFindings, 'FINDINGS section must be present');
-        $this->assertGreaterThan($posFindings, $posNote,
-            'NOTE must come after FINDINGS section');
+        $this->assertGreaterThan($posFindings, $posNotes,
+            'NOTES must come after FINDINGS section');
+    }
+
+    public function testNotesRemainsTheFinalSectionOfTheTextReport(): void
+    {
+        $report = $this->makeReport(
+            findings: [$this->makeFinding()],
+            iocs: [$this->makeIoc('evil.ru')],
+            warnings: [new ScanWarning('parse failed', '/tmp/x.php', 'parse_error')],
+            pluginIntegrity: [
+                'premium-plugin' => [
+                    'status' => 'unavailable',
+                    'version' => '2.1.0',
+                    'method' => 'unavailable',
+                    'officialCount' => 0,
+                    'localCount' => 2,
+                    'okCount' => 0,
+                    'modifiedFiles' => [],
+                    'unexpectedFiles' => [],
+                    'missingFiles' => [],
+                    'officialSourceAvailable' => false,
+                    'malwareAnalysisSkipped' => true,
+                ],
+            ],
+        );
+
+        $text = rtrim($this->render($report));
+        $posNotes = strrpos($text, 'NOTES');
+        $this->assertNotFalse($posNotes, 'NOTES must be present');
+        $tail = substr($text, $posNotes);
+        $this->assertStringNotContainsString('WARNINGS', $tail);
+        $this->assertStringNotContainsString('PLUGIN INTEGRITY', $tail);
+        $this->assertStringContainsString('Additional suspicious indicators were found during analysis.', $tail);
     }
 
     // ── Severity counts are unaffected by IOC presence ───────────────────────
@@ -286,8 +352,8 @@ final class TextReporterTest extends TestCase
         );
         $text = $this->render($report);
 
-        $noteStart = strpos($text, 'NOTE');
-        $this->assertNotFalse($noteStart, 'NOTE section must be present');
+        $noteStart = strpos($text, 'NOTES');
+        $this->assertNotFalse($noteStart, 'NOTES section must be present');
         $noteText = substr($text, $noteStart);
 
         $this->assertStringNotContainsString('suspicious files', $noteText,
